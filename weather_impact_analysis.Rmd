@@ -1,0 +1,143 @@
+---
+title: "Weather impact on U.S. population"
+author: "Mike P"
+date: "February 22, 2017"
+output: html_document
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE,
+	cache = TRUE
+)
+#library(reshape2)
+```
+
+## Synopsis
+The goal of this study is to demonstrate the effects of weather phenomena on human health and economy in U.S. The study is based on [Storm data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2) dataset produced by NOAA, which includes individual weather events along with estimated human fatalities and injuries, as well as property and crop damages. The study will demonstrate cumulative health and economic effects over the entire span of collected data and determine top 10 weather events with the biggest human and economic effects. 
+  
+The study will also determine the annual trends for each of the top weather events to determine whether the cumulative effect of the events increases of decreases of time. 
+
+## Data Processing
+### Dataset variables
+Each record in the [Storm data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2) dataset represents an individual weather event. It tracks a veraity of variables, but for the study we only need the following:
+  
+* **Event type** - a character string that describes the event (tornado, flood, hail, heat, etc.). The event descriptions are not unique. There are many instances when the same event is represented by different event type values. For example winter storms could be recorded as **"WINTER STORM"** or **"WINTER STORMS"**. Or lightning could be captured as **"LIGHTING"**, **"LIGHTNING"**, or **"LIGHTNING."**. In this stydy we will treat each event type as a separate event fully aware that shuch approach will skew the results.
+* **Beggining date** - The date/time then the event began.
+* **Fatalities** - a number of human fatalities caused by the event
+* **Injuries** - a number humans injured as result of the event
+* **Property damages** - property damages caused by the event expressed in US dollars.
+* **Property damage magnitude** - a letter code that determines magnitude of the propery damage:
+    + K - thousands
+    + M - millions
+    + B - billions
+    + _empty_ - actual amount
+* **Crops damages** - crop damages caused by the event expressed in US dollars.
+* **Crops damage magnitude** - a letter code that determines magnitude of the crops damage:
+    + K - thousands
+    + M - millions
+    + B - billions
+    + _empty_ - actual amount
+  
+### Data Processing
+The analisys of values in the **magnitude** showed that that they contain ironious 
+
+
+
+```{r load-preprocess-data}
+library(dplyr)
+
+#URL of the zipped file
+string.NOAA.file.url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+
+#download location
+string.NOAA.file.zip <- paste(getwd(), "repdata_data_StormData.bz2", sep = "/")
+
+#download zip file from URL
+if(!file.exists(string.NOAA.file.zip)){
+    download.file(string.NOAA.file.url, string.NOAA.file.zip)
+}
+
+
+#load data from file into a new dataframe
+if(!exists("data.raw")){
+    data.raw <- read.csv(bzfile(description = string.NOAA.file.zip), header = TRUE)[, c("EVTYPE", "BGN_DATE", "FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP")]
+    
+    #The reserved magnitude identifiers are K for thousands, M for millions, B for billions
+    #There are 328 records with magnitude identifiers other then K, M, and B related to property damagies and 28 related to crop damagies
+    #with total $ of 7990 (statistigally insignificat). These records will be excluded
+    data.raw <- subset(data.raw, data.raw$PROPDMGEXP %in% c("K", "M", "B", "") & data.raw$CROPDMGEXP %in% c("K", "M", "B", ""))
+    
+    head(data.raw)
+    
+    #create magnitude multiplier map
+    data.magnitude.map <- setNames(data.frame(c("","K","M","B"), c(1,1000,1000000,1000000000)), c("MAG_CODE", "MULTIPLIER"))
+    
+    #assign property damage multiplier
+    data.raw <- setNames(left_join(data.raw, data.magnitude.map, by = c("PROPDMGEXP" = "MAG_CODE")), c(names(data.raw), "PROPDMGMULT"))
+    
+    #assign crop damage multiplier
+    data.raw <- setNames(left_join(data.raw, data.magnitude.map, by = c("CROPDMGEXP" = "MAG_CODE")), c(names(data.raw), "CROPDMGMULT"))
+    
+    #apply magnitude multiplier
+    data.raw <- transform(data.raw, PROPDMG = PROPDMG * PROPDMGMULT, CROPDMG = CROPDMG * CROPDMGMULT)[, c("EVTYPE", "BGN_DATE", "FATALITIES", "INJURIES", "PROPDMG", "CROPDMG")]
+}
+
+#calculate total health (fatalities + injuries) and economic (properties + crops damagies) effects
+#for each event type by years. This data will be used to demonstrsate annual changes for the top ranked events
+data.event.year.agg <- aggregate(data = data.raw, cbind(FATALITIES + INJURIES, PROPDMG + CROPDMG) ~ EVTYPE + format(as.Date(BGN_DATE, "%m/%d/%Y"), "%Y"), FUN = sum)
+names(data.event.year.agg) <- c("EV_TYPE", "EV_YEAR", "EV_YEAR_HEALTH_EFF", "EV_YEAR_ECON_EFF")
+
+#calculate total health (fatalities + injuries) and economic (properties + crops damagies) effects
+#for years. This data will be used to calculate % of event effect to total effect
+data.year.agg <- aggregate(data = data.event.year.agg, cbind(EV_YEAR_HEALTH_EFF, EV_YEAR_ECON_EFF) ~ EV_YEAR, FUN = sum)
+names(data.year.agg) <- c("EV_YEAR", "TOTAL_YEAR_HEALTH_EFF", "TOTAL_YEAR_ECON_EFF")
+```
+
+
+##Analysis
+### Data Overview
+* Where does the data come from
+* What data consists of
+* Data limitations
+    + Types and number of events changes from year to year
+    + Redundant or misspelled event types
+* 
+
+
+```{r assign-ranks}
+#calculate total health (fatalities + injuries) and economic (properties + crops damagies) effects
+#for each event type across all years. This data will be used to rank event types by comulative damage
+data.event.agg <- aggregate(data = data.raw, cbind(FATALITIES + INJURIES, PROPDMG + CROPDMG) ~ EVTYPE, FUN = sum)
+names(data.event.agg) <- c("EV_TYPE", "TOTAL_EV_HEALTH_EFF", "TOTAL_EV_ECON_EFF")
+
+#rank the records based on health and economic effect
+data.event.agg <- cbind(data.event.agg, rank(data.event.agg$TOTAL_EV_HEALTH_EFF, ties.method = "first"), rank(data.event.agg$TOTAL_EV_ECON_EFF, ties.method = "first"))
+names(data.event.agg) <- c("EV_TYPE", "TOTAL_EV_HEALTH_EFF", "TOTAL_EV_ECON_EFF", "TOTAL_EV_HEALTH_EFF_RANK", "TOTAL_EV_ECON_EFF_RANK")
+```
+
+```{r plot-top-effect}
+library(ggplot2)
+library(scales)
+library(gridExtra)
+
+#plot top 10 ranked event types effecting health
+plot_health <- ggplot() +
+    geom_bar(data = top_n(data.event.agg, 10, TOTAL_EV_HEALTH_EFF_RANK), aes(x = reorder(EV_TYPE, -TOTAL_EV_HEALTH_EFF), y = TOTAL_EV_HEALTH_EFF), stat = "identity") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+    xlab("Event Types") +
+    ylab("Deaths and Injuries")
+
+#plot top 10 ranked event types effecting economy
+plot_econ <- ggplot() +
+    geom_bar(data = top_n(data.event.agg, 10, TOTAL_EV_ECON_EFF_RANK), aes(x = reorder(EV_TYPE, -TOTAL_EV_ECON_EFF), y = TOTAL_EV_ECON_EFF), stat = "identity") +
+    scale_y_continuous(labels = dollar) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+    xlab("Event Types") +
+    ylab("Property and Crops Damage ($)")
+
+#combine plots
+grid.arrange(plot_health, plot_econ, nrow = 1)
+```
